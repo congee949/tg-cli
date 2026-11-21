@@ -342,3 +342,30 @@ class TestGetToday:
         db.insert_message(**make_msg(chat_id=200, msg_id=2, hours_ago=1))
         results = db.get_today(chat_id=100)
         assert len(results) == 1
+
+
+def test_numeric_lookup_avoids_listing_other_chats(db, monkeypatch):
+    db.insert_message(**make_msg(chat_id=12345))
+    db.insert_message(**make_msg(chat_id=12345, msg_id=2))
+    expected, = db.get_chats()
+
+    def unexpected_scan():
+        raise AssertionError("known numeric peer enumerated every chat")
+
+    monkeypatch.setattr(db, "get_chats", unexpected_scan)
+    assert db.find_chats("12345") == [expected]
+    assert db.resolve_chat_id("12345") == 12345
+
+
+def test_numeric_titles_still_match(db):
+    title = "9" * 25
+    db.insert_message(**make_msg(chat_id=42, chat_name=title))
+    assert db.resolve_chat_id(title) == 42
+
+
+def test_sync_cursor_isolated_by_platform(db):
+    db.insert_message(**make_msg(chat_id=42, msg_id=7))
+    db.conn.execute("INSERT INTO messages (platform, chat_id, msg_id, timestamp)"
+                    " VALUES ('import',42,88,'2026-01-01')")
+    assert db.get_last_msg_id(42) == 88
+    assert db.get_last_msg_id(42, platform="telegram") == 7

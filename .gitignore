@@ -12,3 +12,6 @@ build/
 *.session-wal
 data/
 .pytest_cache/
+
+# Output directory used by the sync-media examples
+/archive/

@@ -27,3 +27,11 @@ error:
 - query commands usually return lists or dicts inside `data`
 - `status` returns `data.authenticated` plus `data.user`
 - `whoami` returns `data.user`
+
+## Selected-chat sync
+
+`tg sync-many --json` returns one entry per request in `data.results`, in input order.
+Each entry includes the requested chat, the resolved numeric chat ID when available,
+the number of inserted messages, and a status. A scheduler should check each status.
+A successful poll can insert zero messages. A rate-limited entry includes
+`retry_after_seconds`.

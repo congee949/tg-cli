@@ -43,9 +43,11 @@ Issues = "https://github.com/jackwener/tg-cli/issues"
 tg = "tg_cli.cli.main:cli"
 
 [tool.hatch.build.targets.wheel]
+core-metadata-version = "2.4"
 packages = ["src/tg_cli"]
 
 [tool.hatch.build.targets.sdist]
+core-metadata-version = "2.4"
 include = [
     "src/tg_cli",
     "README.md",

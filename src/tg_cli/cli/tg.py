@@ -14,12 +14,13 @@ from ._chat import _parse_chat, resolve_chat_id_or_print
 from ._output import (
     default_structured_format,
     dump_structured,
+    emit_error,
     emit_structured,
     error_payload,
     structured_output_options,
     success_payload,
 )
-from ._sync import sync_all_dialogs, sync_chat_dialog
+from ._sync import sync_all_dialogs, sync_chat_dialog, sync_many_dialogs
 
 
 def _telegram_user_payload(me) -> dict[str, str | int]:
@@ -109,15 +110,9 @@ def tg_sync(chat: str, limit: int, as_json: bool, as_yaml: bool):
 
     async def _run():
         with MessageDB() as db:
-            # Resolve chat_id to get last_msg_id
-            chat_id = resolve_chat_id_or_print(db, chat, allow_missing=True)
-            matches = db.find_chats(chat)
-            if len(matches) > 1:
+            if len(db.find_chats(chat)) > 1:
                 resolve_chat_id_or_print(db, chat)
                 return None
-            last_id = db.get_last_msg_id(chat_id) if chat_id else 0
-        if last_id:
-            console.print(f"Syncing from msg_id > {last_id}...")
 
         with Progress(
             SpinnerColumn(),
@@ -138,6 +133,79 @@ def tg_sync(chat: str, limit: int, as_json: bool, as_yaml: bool):
     if emit_structured(payload, as_json=as_json, as_yaml=as_yaml):
         return
     console.print(f"\n[green]\u2713[/green] Synced {count} new messages from {chat}")
+
+
+def _parse_sync_many_requests(values: tuple[str, ...]) -> list[tuple[str, int]]:
+    """Parse repeated CHAT=LIMIT values without confusing negative chat IDs."""
+    parsed: list[tuple[str, int]] = []
+    for value in values:
+        if "=" not in value:
+            raise click.BadParameter(
+                f"expected CHAT=LIMIT, got {value!r}", param_hint="--request"
+            )
+        chat, raw_limit = value.rsplit("=", 1)
+        if not chat.strip():
+            raise click.BadParameter("CHAT must not be empty", param_hint="--request")
+        try:
+            limit = int(raw_limit)
+        except ValueError as exc:
+            raise click.BadParameter(
+                f"LIMIT must be an integer, got {raw_limit!r}", param_hint="--request"
+            ) from exc
+        if limit < 0:
+            raise click.BadParameter("LIMIT must be non-negative", param_hint="--request")
+        parsed.append((chat, limit))
+    return parsed
+
+
+@tg_group.command("sync-many")
+@click.option(
+    "--request",
+    "request_values",
+    multiple=True,
+    required=True,
+    metavar="CHAT=LIMIT",
+    help="Chat and per-chat limit. Repeat for multiple chats; use --request=-100...=500.",
+)
+@structured_output_options
+def tg_sync_many(
+    request_values: tuple[str, ...],
+    as_json: bool,
+    as_yaml: bool,
+):
+    """Incrementally sync selected chats through one Telegram connection."""
+    requests = _parse_sync_many_requests(request_values)
+    try:
+        results = asyncio.run(sync_many_dialogs(requests))
+    except Exception as exc:
+        if emit_error(
+            "sync_many_failed",
+            str(exc),
+            as_json=as_json,
+            as_yaml=as_yaml,
+        ):
+            raise click.exceptions.Exit(1) from exc
+        raise click.ClickException(str(exc)) from exc
+
+    payload = {
+        "new_messages": sum(item["synced"] for item in results),
+        "requests": len(requests),
+        "results": results,
+    }
+    if emit_structured(payload, as_json=as_json, as_yaml=as_yaml):
+        return
+
+    for item in results:
+        if item["status"] == "ok":
+            console.print(f"  [green]✓[/green] {item['chat']}: +{item['synced']}")
+        elif item["status"] == "rate_limited":
+            console.print(f"  [yellow]⚠[/yellow] {item['chat']}: {item['error']}")
+        else:
+            console.print(f"  [red]✗[/red] {item['chat']}: {item['error']}")
+    console.print(
+        f"\n[green]✓[/green] Synced {payload['new_messages']} new messages "
+        f"across {len(results)} requests"
+    )
 
 
 @tg_group.command("sync-all")

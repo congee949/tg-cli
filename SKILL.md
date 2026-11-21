@@ -53,6 +53,8 @@ tg whoami                         # Show current user info
 tg whoami --yaml                  # Preferred structured output for agents
 tg history CHAT -n 1000           # Fetch historical messages
 tg sync CHAT                      # Incremental sync (only new)
+tg sync-many --request="CHAT=50" --json  # Per-chat sync results and rate-limit state
+tg sync-media --chat=CHAT --since=2026-01-01T00:00:00Z --output=./archive --limit=50
 tg sync-all                       # Low-level sync for all current dialogs
 tg refresh                        # Recommended daily refresh entrypoint
 tg listen                         # Real-time listener

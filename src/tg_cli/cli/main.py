@@ -5,6 +5,7 @@ import logging
 import click
 
 from .data import data_group
+from .media_sync import tg_sync_media
 from .query import query_group
 from .tg import tg_group
 
@@ -30,3 +31,5 @@ def cli(verbose: bool):
 for group in (tg_group, query_group, data_group):
     for name, cmd in group.commands.items():
         cli.add_command(cmd, name)
+
+cli.add_command(tg_sync_media)

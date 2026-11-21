@@ -8,6 +8,16 @@
 
 Telethon-powered Telegram CLI for local-first sync, search, export, and agent-friendly retrieval.
 
+This fork adds bounded incremental sync, resumable media downloads and local archive tools.
+Install this checkout with:
+
+```bash
+uv tool install git+https://github.com/congee949/tg-cli.git
+```
+
+The selected-chat polling interface follows the Apache-2.0 [kabi-tg-cli derivative](https://github.com/congee949/kabi-tg-cli/tree/09121c7b23b727d03ae5aa3dc6d027439956ef15).
+The [local archive tools](examples/archive/) reconcile SQLite sources and clone existing media on APFS.
+
 ## More Projects
 
 - [xiaohongshu-cli](https://github.com/jackwener/xiaohongshu-cli) — Xiaohongshu (小红书) CLI for notes and account workflows
@@ -109,6 +119,8 @@ tg status --yaml
 tg refresh
 tg sync-all --yaml
 tg sync "GroupName"
+tg sync-many --request="GroupName=50" --json
+tg sync-media --chat="GroupName" --since=2026-01-01T00:00:00Z --output=./archive --limit=50
 
 # Search / browse
 tg search "Rust"
@@ -228,6 +240,12 @@ tg-cli uses your personal Telegram account via MTProto. To reduce the risk of ac
 
 ## 中文
 
+此分支增加了分批增量同步、可续传的媒体归档和本地对账工具。从 GitHub 安装此分支可使用这些命令。
+
+```bash
+uv tool install git+https://github.com/congee949/tg-cli.git
+```
+
 `tg-cli` 是一个基于 Telethon 的 Telegram CLI。它不是 Bot API 工具，而是使用你自己的
 Telegram 账号走 MTProto，把消息同步到本地 SQLite，方便你在终端里做搜索、筛选、导出，
 也方便 AI agent 直接把它当作本地 retrieval tool 调用。
@@ -322,6 +340,8 @@ tg status --yaml
 tg refresh
 tg sync-all --yaml
 tg sync "群名"
+tg sync-many --request="群名=50" --json
+tg sync-media --chat="群名" --since=2026-01-01T00:00:00Z --output=./archive --limit=50
 
 # 搜索 / 浏览
 tg search "Rust"

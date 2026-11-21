@@ -146,14 +146,38 @@ async def get_chat_info(client: TelegramClient, chat: str | int) -> dict | None:
     return info
 
 
+async def _history_messages(client, entity, *, limit: int, min_id: int):
+    # Cold sync and history take exactly one latest-first page. With a
+    # cursor, spend the limit on storable messages and scan forward over
+    # service-only pages (which cannot advance the persistent cursor).
+    incremental = min_id > 0
+    remaining = limit
+    while remaining > 0:
+        page_size = remaining
+        seen = 0
+        async for msg in client.iter_messages(
+            entity, limit=page_size, min_id=min_id, reverse=incremental
+        ):
+            seen += 1
+            min_id = msg.id
+            if msg.text is None and msg.message is None and getattr(msg, "media", None) is None:
+                continue
+            remaining -= 1
+            yield msg
+        if not incremental or seen < page_size:
+            break
+
+
 async def fetch_history(
     client: TelegramClient,
-    chat: str | int,
+    chat: str | int | User | Chat | Channel,
     limit: int = 1000,
     db: MessageDB | None = None,
     on_progress: Callable[[int], None] | None = None,
     min_id: int = 0,
     batch_delay: float = 0,
+    *,
+    propagate_flood_wait: bool = False,
 ) -> int:
     """Fetch historical messages from a chat and store them in the database.
 
@@ -172,7 +196,7 @@ async def fetch_history(
         db = MessageDB()
 
     try:
-        entity = await client.get_entity(chat)
+        entity = chat if isinstance(chat, (User, Chat, Channel)) else await client.get_entity(chat)
         chat_name = (
             getattr(entity, "title", None) or getattr(entity, "first_name", None) or str(chat)
         )
@@ -185,10 +209,7 @@ async def fetch_history(
         inserted_count = 0
         BATCH_SIZE = 200
 
-        async for msg in client.iter_messages(entity, limit=limit, min_id=min_id):
-            if msg.text is None and msg.message is None:
-                continue
-
+        async for msg in _history_messages(client, entity, limit=limit, min_id=min_id):
             # Extract sender name from Telethon's cached _sender (zero API calls)
             sender_name = None
             if msg.sender_id:
@@ -207,6 +228,7 @@ async def fetch_history(
             if ts and ts.tzinfo is None:
                 ts = ts.replace(tzinfo=timezone.utc)
 
+            media = getattr(msg, "media", None)
             batch.append(
                 dict(
                     chat_id=chat_id,
@@ -215,6 +237,7 @@ async def fetch_history(
                     sender_id=msg.sender_id,
                     sender_name=sender_name,
                     content=content,
+                    raw_json={"media_type": type(media).__name__} if media is not None else None,
                     timestamp=ts or datetime.now(timezone.utc),
                 )
             )
@@ -235,6 +258,8 @@ async def fetch_history(
 
         return inserted_count
     except FloodWaitError as e:
+        if propagate_flood_wait:
+            raise
         console.print(f"[yellow]⚠ Telegram rate limit hit, waiting {e.seconds}s...[/yellow]")
         await asyncio.sleep(e.seconds + random.uniform(1, 3))
         return 0
@@ -280,7 +305,7 @@ async def sync_all(
     for idx, (chat_id, (entity, dialog_name)) in enumerate(items):
         chat_info = stored_chats.get(chat_id, {})
         chat_name = chat_info.get("chat_name") or dialog_name or str(chat_id)
-        last_id = db.get_last_msg_id(chat_id) or 0
+        last_id = db.get_last_msg_id(chat_id, platform="telegram") or 0
 
         # Progressive sync: use lower limit for first-time chat sync
         effective_limit = limit_per_chat

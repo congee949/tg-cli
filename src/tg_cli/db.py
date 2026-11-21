@@ -51,6 +51,14 @@ def _canonical_chat_id(chat_id: int) -> int:
     return chat_id
 
 
+def _numeric_peer(token: str) -> int | None:
+    try:
+        peer = _canonical_chat_id(int(token))
+    except ValueError:
+        return None
+    return peer if peer <= 2**63 - 1 else None
+
+
 class MessageDB:
     """SQLite message store with context manager support."""
 
@@ -74,16 +82,13 @@ class MessageDB:
 
     def find_chats(self, chat_str: str) -> list[dict]:
         """Return chats matching a numeric ID, exact name, or partial name."""
+        numeric_id = _numeric_peer(chat_str)
+        if numeric_id is not None:
+            matches = self._chat_summaries(numeric_id)
+            if matches:
+                return matches
+
         chats = self.get_chats()
-
-        try:
-            numeric_id = _canonical_chat_id(int(chat_str))
-            exact_id_matches = [c for c in chats if c["chat_id"] == numeric_id]
-            if exact_id_matches:
-                return exact_id_matches
-        except ValueError:
-            pass
-
         exact_name_matches = [
             c for c in chats if c["chat_name"] and c["chat_name"].casefold() == chat_str.casefold()
         ]
@@ -97,6 +102,11 @@ class MessageDB:
 
     def resolve_chat_id(self, chat_str: str) -> int | None:
         """Resolve a chat string (name or numeric ID) to a unique database chat_id."""
+        peer = _numeric_peer(chat_str)
+        if peer is not None and self.conn.execute(
+            "SELECT 1 FROM messages WHERE chat_id=? LIMIT 1", (peer,)
+        ).fetchone():
+            return peer
         matches = self.find_chats(chat_str)
         if len(matches) == 1:
             return matches[0]["chat_id"]
@@ -326,21 +336,32 @@ class MessageDB:
 
     def get_chats(self) -> list[dict]:
         """Get all known chats with message counts."""
+        return self._chat_summaries()
+
+    def _chat_summaries(self, chat_id: int | None = None) -> list[dict]:
+        where = "WHERE chat_id = ?" if chat_id is not None else ""
         rows = self.conn.execute(
-            """SELECT chat_id, chat_name, COUNT(*) as msg_count,
-                      MIN(timestamp) as first_msg, MAX(timestamp) as last_msg
-               FROM messages
-               GROUP BY chat_id
-               ORDER BY msg_count DESC"""
+            f"""SELECT chat_id, chat_name, COUNT(*) as msg_count,
+                       MIN(timestamp) as first_msg, MAX(timestamp) as last_msg
+                FROM messages {where}
+                GROUP BY chat_id
+                ORDER BY msg_count DESC""",
+            (chat_id,) if chat_id is not None else (),
         ).fetchall()
         return [dict(r) for r in rows]
 
-    def get_last_msg_id(self, chat_id: int) -> int | None:
-        """Get the latest msg_id for a chat, used for incremental sync."""
-        row = self.conn.execute(
-            "SELECT MAX(msg_id) FROM messages WHERE chat_id = ?", (chat_id,)
-        ).fetchone()
-        return row[0] if row and row[0] is not None else None
+    def get_last_msg_id(self, chat_id: int, *, platform: str | None = None) -> int | None:
+        """Return the latest ID, optionally within one platform's message sequence."""
+        if platform is None:
+            row = self.conn.execute(
+                "SELECT MAX(msg_id) FROM messages WHERE chat_id = ?", (chat_id,)
+            ).fetchone()
+        else:
+            row = self.conn.execute(
+                "SELECT MAX(msg_id) FROM messages WHERE platform = ? AND chat_id = ?",
+                (platform, chat_id),
+            ).fetchone()
+        return row[0]
 
     def count(self, chat_id: int | None = None) -> int:
         if chat_id is not None:
