@@ -1,470 +1,89 @@
-# tg-cli
+# tg-cli archive fork
 
-[![CI](https://github.com/jackwener/tg-cli/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/jackwener/tg-cli/actions/workflows/ci.yml)
-[![PyPI](https://img.shields.io/pypi/v/kabi_tg_cli)](https://pypi.org/project/kabi-tg-cli/)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
-> **PyPI package name:** [`kabi-tg-cli`](https://pypi.org/project/kabi-tg-cli/) — install with `uv tool install kabi-tg-cli`
+这个 fork 用于把指定 Telegram 群长期保存在本地。它在 [jackwener/tg-cli](https://github.com/jackwener/tg-cli) 的基础上增加三项能力：
 
-Telethon-powered Telegram CLI for local-first sync, search, export, and agent-friendly retrieval.
+- `tg sync-many` 按群分批增量同步，返回每个群的写入数量、失败状态和限流等待时间。
+- `tg sync-media` 按起始时间下载照片和文档，中断后从游标继续。
+- [本地归档工具](examples/archive/) 合并两个 SQLite 来源，并在 macOS APFS 上为已有媒体建立独立副本。
 
-This fork adds bounded incremental sync, resumable media downloads and local archive tools.
-Install this checkout with:
-
-```bash
-uv tool install git+https://github.com/congee949/tg-cli.git
-```
-
-The selected-chat polling interface follows the Apache-2.0 [kabi-tg-cli derivative](https://github.com/congee949/kabi-tg-cli/tree/09121c7b23b727d03ae5aa3dc6d027439956ef15).
-The [local archive tools](examples/archive/) reconcile SQLite sources and clone existing media on APFS.
-
-## More Projects
-
-- [xiaohongshu-cli](https://github.com/jackwener/xiaohongshu-cli) — Xiaohongshu (小红书) CLI for notes and account workflows
-- [twitter-cli](https://github.com/jackwener/twitter-cli) — Twitter/X CLI for timelines, search, and posting
-- [bilibili-cli](https://github.com/jackwener/bilibili-cli) — Bilibili CLI for videos, users, search, and feeds
-- [discord-cli](https://github.com/jackwener/discord-cli) — Discord CLI for local-first sync, search, and export
-
-[English](#english) | [中文](#中文)
-
-## English
-
-tg-cli uses your own Telegram account over MTProto, not the Bot API. It syncs messages into local
-SQLite so humans and AI agents can query the same cache quickly with `--json` or `--yaml`.
-
-## Features
-
-- Sync Telegram dialogs into a local SQLite cache
-- Search by keyword or regex, with chat, sender, and time filters
-- Browse recent messages, today's messages, top senders, and timelines
-- Export messages as text, JSON, or YAML
-- Keep a near-real-time cache with `tg listen --persist`
-- Prefer YAML for AI agents when a strict JSON parser is not required
-- Default to YAML automatically on non-TTY stdout; override with `OUTPUT=yaml|json|rich|auto`
-- Structured output contract: [SCHEMA.md](./SCHEMA.md)
-
-## Installation
-
-```bash
-# Recommended: uv tool
-uv tool install kabi-tg-cli
-
-# Or: pipx / pip
-pipx install kabi-tg-cli
-pip install kabi-tg-cli
-```
-
-Upgrade to the latest version:
-
-```bash
-uv tool upgrade kabi-tg-cli
-# Or: pipx upgrade kabi-tg-cli
-```
-
-> **Tip:** Upgrade regularly to avoid unexpected errors from outdated API handling.
-
-Install from GitHub:
-
-```bash
-uv tool install git+https://github.com/jackwener/tg-cli.git
-```
-
-Install from source:
-
-```bash
-git clone git@github.com:jackwener/tg-cli.git
-cd tg-cli
-uv sync --extra dev
-```
-
-## Quick Start
-
-```bash
-# First login (uses Telegram Desktop built-in credentials by default)
-tg chats
-
-# Check the current account
-tg status
-tg whoami
-
-# Refresh the local cache
-tg refresh
-
-# Read and search
-tg today
-tg recent --hours 24 --limit 20 --yaml
-tg search "Rust" --hours 48
-tg filter "Rust,Golang,remote" --hours 48 --sync-first --yaml
-
-# Keep a near-real-time cache
-tg listen --persist
-```
-
-## Refresh Model
-
-tg-cli is intentionally local-first:
-
-- `tg refresh` is the recommended daily entrypoint
-- `tg sync-all` is the lower-level primitive for scripts and schedulers
-- `--sync-first` refreshes before a single query
-- `tg listen --persist` reconnects automatically for a near-live cache
-
-Most query commands read from local SQLite, not directly from Telegram.
-
-## Usage
-
-```bash
-# Sync
-tg status --yaml
-tg refresh
-tg sync-all --yaml
-tg sync "GroupName"
-tg sync-many --request="GroupName=50" --json
-tg sync-media --chat="GroupName" --since=2026-01-01T00:00:00Z --output=./archive --limit=50
-
-# Search / browse
-tg search "Rust"
-tg search "Rust|Golang" --regex --hours 72
-tg recent --hours 24 --limit 20 --yaml
-tg today --sync-first
-tg top --hours 24 --sync-first
-tg timeline --by hour --sync-first
-
-# Export
-tg export "GroupName" -f yaml -o messages.yaml
-
-# Send
-tg send "GroupName" "Hello!"
-```
-
-## Scheduling
-
-If you do not want to run `tg refresh` manually, use a scheduler.
-
-### cron
-
-See [examples/tg-refresh.cron](https://github.com/jackwener/tg-cli/blob/main/examples/tg-refresh.cron).
-
-### systemd user timer
-
-See:
-
-- [tg-refresh.service](https://github.com/jackwener/tg-cli/blob/main/examples/systemd/tg-refresh.service)
-- [tg-refresh.timer](https://github.com/jackwener/tg-cli/blob/main/examples/systemd/tg-refresh.timer)
-
-Typical flow:
-
-```bash
-mkdir -p ~/.config/systemd/user
-cp examples/systemd/tg-refresh.service ~/.config/systemd/user/
-cp examples/systemd/tg-refresh.timer ~/.config/systemd/user/
-systemctl --user daemon-reload
-systemctl --user enable --now tg-refresh.timer
-```
-
-## Use as AI Agent Skill
-
-tg-cli ships with a [`SKILL.md`](./SKILL.md) for AI agent integration.
-
-### Agent Output Recommendation
-
-If an AI agent needs machine-readable output, prefer `--yaml` first:
-
-- `--yaml` is usually more token-efficient than pretty-printed JSON
-- It is still easy to parse for agents and scripts
-- Keep `--json` for `jq`, strict JSON-only tooling, or exact downstream schemas
-- Non-TTY stdout defaults to YAML automatically
-- Use `OUTPUT=yaml|json|rich|auto` to override the default mode
-
-Recommended agent workflow:
-
-```bash
-tg refresh --yaml
-tg chats --yaml
-tg recent --hours 24 --sync-first --yaml
-tg search "keyword" --chat "GroupName" --sync-first --yaml
-```
-
-### [Skills CLI](https://github.com/vercel-labs/skills) (Recommended)
-
-```bash
-npx skills add jackwener/tg-cli
-```
-
-| Flag | Description |
-| --- | --- |
-| `-g` | Install globally (user-level, shared across projects) |
-| `-a claude-code` | Target a specific agent |
-| `-y` | Non-interactive mode |
-
-### Manual Install
-
-```bash
-mkdir -p .agents/skills
-git clone git@github.com:jackwener/tg-cli.git .agents/skills/tg-cli
-```
-
-### ~~OpenClaw / ClawHub~~ (Deprecated)
-
-> ⚠️ ClawHub install method is deprecated and no longer supported. Use [Skills CLI](#skills-cli-recommended) or Manual Install above.
-
-## ⚠️ Account Safety
-
-tg-cli uses your personal Telegram account via MTProto. To reduce the risk of account restrictions:
-
-1. **Get your own API credentials** — Go to [my.telegram.org](https://my.telegram.org), create an app, and set:
-   ```bash
-   export TG_API_ID=12345678
-   export TG_API_HASH="your_api_hash_here"
-   ```
-   The default `api_id=2040` (Telegram Desktop) is shared by many third-party tools and may attract stricter scrutiny.
-
-2. **Limit sync frequency** — Avoid running `tg refresh` more than 1–2 times per day.
-
-3. **Use `--delay` and `--max-chats`** — Both `refresh` and `sync-all` support:
-   - `--delay 3.0` — seconds between each chat sync (default: 2.0, with ±20% jitter)
-   - `--max-chats 30` — only sync the first N chats per run
-
-4. **Prefer established accounts** — New or rarely-used accounts are more likely to be flagged.
-
-5. **Prefer read-only operations** — `tg send` carries higher risk than read commands.
-
-## Troubleshooting
-
-- `No messages today`
-  - Run `tg refresh` first, or use `tg today --sync-first`.
-- `Chat '...' not found in database`
-  - Run `tg refresh` first, or use the numeric `chat_id` from `tg chats --yaml`.
-- Repeatedly running `sync-all`
-  - Prefer `tg refresh` for daily use, `--sync-first` for single queries, or `tg listen --persist`.
-
-## 中文
-
-此分支增加了分批增量同步、可续传的媒体归档和本地对账工具。从 GitHub 安装此分支可使用这些命令。
-
-```bash
-uv tool install git+https://github.com/congee949/tg-cli.git
-```
-
-`tg-cli` 是一个基于 Telethon 的 Telegram CLI。它不是 Bot API 工具，而是使用你自己的
-Telegram 账号走 MTProto，把消息同步到本地 SQLite，方便你在终端里做搜索、筛选、导出，
-也方便 AI agent 直接把它当作本地 retrieval tool 调用。
-
-## 功能特性
-
-- 同步 Telegram dialogs 到本地 SQLite
-- 支持关键词搜索和 regex 搜索，可按 chat、sender、时间窗口过滤
-- 支持 `recent`、`today`、`top`、`timeline` 等本地分析命令
-- 支持导出为 text、JSON、YAML
-- 支持 `tg listen --persist`，维持近实时本地缓存
-- 支持 `--json` / `--yaml`，其中 AI agent 更推荐 `--yaml`
-- stdout 不是 TTY 时默认自动输出 YAML，也可以用 `OUTPUT=yaml|json|rich|auto` 覆盖
+原作者的通用搜索、导出、监听和调度说明仍保留在上游仓库。这里只记录本 fork 的安装和使用方式。
 
 ## 安装
 
 ```bash
-# 推荐：uv tool
-uv tool install kabi-tg-cli
-
-# 或者：pipx / pip
-pipx install kabi-tg-cli
-pip install kabi-tg-cli
+uv tool install git+https://github.com/congee949/tg-cli.git
 ```
 
-升级到最新版本：
+从源码运行：
 
 ```bash
-uv tool upgrade kabi-tg-cli
-# 或：pipx upgrade kabi-tg-cli
-```
-
-> **提示：** 建议定期升级，避免因版本过旧导致的 API 调用异常。
-
-从 GitHub 安装：
-
-```bash
-uv tool install git+https://github.com/jackwener/tg-cli.git
-```
-
-从源码安装：
-
-```bash
-git clone git@github.com:jackwener/tg-cli.git
+git clone https://github.com/congee949/tg-cli.git
 cd tg-cli
-uv sync --extra dev
+uv sync --group dev
+uv run tg status
 ```
 
-## 快速开始
+首次运行会要求登录你的 Telegram 账号。建议在 [my.telegram.org](https://my.telegram.org) 创建自己的应用，并设置 `TG_API_ID` 和 `TG_API_HASH`。
+
+## 使用
+
+先查看账号和已加入的会话：
 
 ```bash
-# 首次登录（默认使用 Telegram Desktop 内置的 API 凭证）
-tg chats
-
-# 检查当前账号
-tg status
-tg whoami
-
-# 刷新本地缓存
-tg refresh
-
-# 浏览和搜索
-tg today
-tg recent --hours 24 --limit 20 --yaml
-tg search "Rust" --hours 48
-tg filter "招聘,remote,Web3" --hours 48 --sync-first --yaml
-
-# 保持近实时缓存
-tg listen --persist
-```
-
-## 刷新模型
-
-`tg-cli` 是 local-first 设计：
-
-- `tg refresh`
-  - 推荐的日常入口，刷新所有当前 dialogs
-- `tg sync-all`
-  - 更底层的同步原语，适合脚本和调度器
-- `--sync-first`
-  - 单次查询前先刷新，适合 `today`、`search`、`recent`
-- `tg listen --persist`
-  - 常驻监听并自动重连，适合做近实时本地缓存
-
-大多数查询命令默认读本地 SQLite，而不是每次都直接请求 Telegram。
-
-## 使用示例
-
-```bash
-# 同步
 tg status --yaml
-tg refresh
-tg sync-all --yaml
-tg sync "群名"
-tg sync-many --request="群名=50" --json
-tg sync-media --chat="群名" --since=2026-01-01T00:00:00Z --output=./archive --limit=50
-
-# 搜索 / 浏览
-tg search "Rust"
-tg search "Rust|Golang" --regex --hours 72
-tg recent --hours 24 --limit 20 --yaml
-tg today --sync-first
-tg top --hours 24 --sync-first
-tg timeline --by hour --sync-first
-
-# 导出
-tg export "群名" -f yaml -o messages.yaml
-
-# 发送消息
-tg send "群名" "Hello!"
-```
-
-## 定时刷新
-
-如果你不想每次手动执行 `tg refresh`，可以配合调度器。
-
-### cron
-
-参考 [examples/tg-refresh.cron](https://github.com/jackwener/tg-cli/blob/main/examples/tg-refresh.cron)。
-
-### systemd user timer
-
-参考：
-
-- [tg-refresh.service](https://github.com/jackwener/tg-cli/blob/main/examples/systemd/tg-refresh.service)
-- [tg-refresh.timer](https://github.com/jackwener/tg-cli/blob/main/examples/systemd/tg-refresh.timer)
-
-典型流程：
-
-```bash
-mkdir -p ~/.config/systemd/user
-cp examples/systemd/tg-refresh.service ~/.config/systemd/user/
-cp examples/systemd/tg-refresh.timer ~/.config/systemd/user/
-systemctl --user daemon-reload
-systemctl --user enable --now tg-refresh.timer
-```
-
-## 作为 AI Agent Skill 使用
-
-`tg-cli` 自带 [`SKILL.md`](./SKILL.md)，方便 AI agent 自动学习并调用。
-
-### Agent 输出建议
-
-如果下游不是严格要求 JSON，优先使用 `--yaml`：
-
-- `--yaml` 通常比 pretty-printed JSON 更省 token
-- 对 agent 和脚本来说依然容易解析
-- 只有在 `jq` 或严格 JSON-only tooling 场景下再优先用 `--json`
-- stdout 不是 TTY 时会默认自动输出 YAML
-- 也可以用 `OUTPUT=yaml|json|rich|auto` 强制覆盖默认输出模式
-
-推荐的 agent 调用顺序：
-
-```bash
-tg refresh --yaml
 tg chats --yaml
-tg recent --hours 24 --sync-first --yaml
-tg search "keyword" --chat "GroupName" --sync-first --yaml
 ```
 
-### [Skills CLI](https://github.com/vercel-labs/skills)（推荐）
+同步指定群。`--limit` 是每轮最多处理的消息数，积压较多时重复运行同一命令即可继续：
 
 ```bash
-npx skills add jackwener/tg-cli
+tg sync-many --request="GroupName=50" --json
 ```
 
-| 参数 | 说明 |
-| --- | --- |
-| `-g` | 全局安装（用户级别，跨项目共享） |
-| `-a claude-code` | 指定目标 Agent |
-| `-y` | 非交互模式 |
-
-### 手动安装
+从指定时间开始归档媒体。`--since` 必须带时区，`--output` 使用独立目录：
 
 ```bash
-mkdir -p .agents/skills
-git clone git@github.com:jackwener/tg-cli.git .agents/skills/tg-cli
+tg sync-media \
+  --chat="GroupName" \
+  --since="2026-01-01T00:00:00Z" \
+  --output="./archive" \
+  --limit=50
 ```
 
-### ~~OpenClaw / ClawHub~~（已过时）
+重复运行同一命令会继续未完成的下载，并抓取新消息。单个文件上限为 64 MiB，普通下载失败最多尝试 3 次。命令输出 JSON 摘要。
 
-> ⚠️ ClawHub 安装方式已过时，不再支持。请使用上方的 Skills CLI 或手动安装。
+搜索已保存的文字：
 
-## ⚠️ 账号安全
+```bash
+tg search "keyword" --chat "GroupName" --yaml
+```
 
-`tg-cli` 使用你的个人 Telegram 账号走 MTProto。为了降低账号被风控的风险：
+## 本地对账
 
-1. **申请自己的 API 凭证** — 前往 [my.telegram.org](https://my.telegram.org)，创建应用后设置：
-   ```bash
-   export TG_API_ID=12345678
-   export TG_API_HASH="your_api_hash_here"
-   ```
-   默认的 `api_id=2040`（Telegram Desktop）被大量第三方工具共用，风控更严格。
+媒体命令会在输出目录创建 `messages.db` 和 `media/<marked-id>/`。对账命令另外读取 tg-cli 的文字缓存：
 
-2. **控制同步频率** — 避免每天执行 `tg refresh` 超过 1-2 次。
+```bash
+export TGA_HOME="$PWD/archive"
+python3 -B examples/archive/archive_reconcile.py \
+  --chat-id "$CHAT_ID" \
+  --first-msg-id "$FIRST_MSG_ID" \
+  --tg-db "$TG_DB" \
+  --anti-db "$TGA_HOME/messages.db"
+```
 
-3. **使用 `--delay` 和 `--max-chats`** — `refresh` 和 `sync-all` 支持：
-   - `--delay 3.0` — 每个 chat 同步间隔秒数（默认 2.0，±20% 随机抖动）
-   - `--max-chats 30` — 每次最多同步前 N 个 chat
+在同一台 Mac 的同一个 APFS 卷上创建媒体副本：
 
-4. **优先使用老号** — 新注册或长期未活跃的账号更容易被标记。
+```bash
+python3 -B examples/archive/archive_media_copy.py \
+  --chat-id "$CHAT_ID" \
+  --first-msg-id "$FIRST_MSG_ID" \
+  --init --limit 32
+```
 
-5. **优先只读操作** — `tg send` 比读取类命令风险更高。
+参数、目录结构和增量行为见 [examples/archive/README.md](examples/archive/README.md)。机器可读的同步回执见 [SCHEMA.md](SCHEMA.md)。
 
-## 常见问题
+## 上游命令
 
-- `No messages today`
-  - 先执行 `tg refresh`，或直接使用 `tg today --sync-first`
-- `Chat '...' not found in database`
-  - 先执行 `tg refresh`，或用 `tg chats --yaml` 找到准确的 `chat_id`
-- 为什么总要先同步
-  - 因为 `tg-cli` 是 local-first 设计，大多数查询命令默认读本地 SQLite，不直接查 Telegram
-
-## 推荐项目
-
-- [twitter-cli](https://github.com/jackwener/twitter-cli) — Twitter/X 时间线、搜索与发帖 CLI
-- [bilibili-cli](https://github.com/jackwener/bilibili-cli) — Bilibili 视频、用户、搜索与动态 CLI
-- [discord-cli](https://github.com/jackwener/discord-cli) — Discord 本地优先同步、检索与导出 CLI
-
-## License
-
-Apache-2.0
+`refresh`、`search`、`export`、`listen` 等原有命令继续可用。完整说明、调度示例和账号安全建议见上游 [README](https://github.com/jackwener/tg-cli/blob/v0.6.0/README.md)。本 fork 当前基于上游 `v0.6.0`。
